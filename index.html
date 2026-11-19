@@ -789,7 +789,7 @@ el.addEventListener('pointerup',e=>{const d=down;down=null;if(!d)return;
   if(xcOpen){closeCard();lastTap=null;return;}                                                   // first tap outside an open card just closes it
   if(mode==='model'){const t=modelTarget(e);if(!t)return;
     if(t.badge){const u=t.badge.userData;if(INFO[String(u.n)]){openCard(String(u.n));return;}tag.textContent='Articolo '+u.n;desc.textContent=(u.name||'Articolo n. '+u.n+' (nome da completare)')+' \u00b7 posizione dalla piantina dello showroom.';return;}
-    if(t.door){const k=doorCard(t.door);if(k)openCard(k);else toggleDoor(t.door);return;}   // a door that is an exhibit opens its card
+    if(t.door){toggleDoor(t.door);return;}   // clicking a door swings it open/closed; its card opens from the number label
     if(t.pin)show(t.pin);return;}
   const t=panoTarget(e);if(t&&t.expo){openCard(t.expo);lastTap=null;return;}if(t&&t.pin){lastTap=null;show(t.pin);return;}
   // double click / double tap on empty space: walk to the shot that lies in that direction
