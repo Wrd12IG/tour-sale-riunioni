@@ -94,6 +94,12 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #pv-msg{color:var(--muted);font-size:14px;padding:30px}
 #veil{position:fixed;inset:0;background:var(--bg);opacity:0;pointer-events:none;transition:opacity .25s ease}
 #veil.on{opacity:1}
+#pad{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:6;display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(2,44px);gap:4px;padding:6px;border-radius:16px;touch-action:none;user-select:none;-webkit-user-select:none}
+#pad button{width:44px;height:44px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.07);color:var(--fg);cursor:pointer;display:grid;place-items:center;padding:0;touch-action:none}
+#pad button svg{width:18px;height:18px;fill:currentColor;pointer-events:none}
+#pad button.on{background:var(--accent);color:var(--ink);border-color:transparent}
+#pad [data-k="up"]{grid-column:2;grid-row:1}#pad [data-k="left"]{grid-column:1;grid-row:2}#pad [data-k="down"]{grid-column:2;grid-row:2}#pad [data-k="right"]{grid-column:3;grid-row:2}
+@media (max-width:560px){#pad{bottom:calc(150px + env(safe-area-inset-bottom,0px));grid-template-columns:repeat(3,40px);grid-template-rows:repeat(2,40px)}#pad button{width:40px;height:40px}}
 @media (prefers-reduced-motion:reduce){#veil{transition:none}}
 @media (max-width:560px){.hint{display:none}.modes button{padding:9px 11px;font-size:12.5px}.th{width:78px}.th img{height:39px}}
 </style>
@@ -117,6 +123,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <div class="card" id="xc" hidden role="dialog" aria-label="Scheda prodotto"><button id="xc-x" aria-label="Chiudi">✕</button><div class="ph" id="xc-ph"><span class="vtag" id="xc-vt" hidden>▶ Video</span></div>
   <div class="bd"><span class="tg" id="xc-tg"></span><span class="promo" id="xc-pr" hidden>Promo</span><h2 id="xc-h"></h2><span class="br" id="xc-br"></span><p class="ds" id="xc-ds"></p><ul id="xc-ul"></ul><div class="ac" id="xc-ac"></div></div></div>
 <div class="card" id="mini" hidden><canvas id="mini-c" width="440" height="400" aria-label="Pianta dei punti 360"></canvas><div class="ft"><span>Pianta</span><span id="mini-z"></span></div></div>
+<div class="card" id="pad" hidden aria-label="Muoviti"><button data-k="up" aria-label="Avanti" title="Avanti (↑ / W)"><svg viewBox="0 0 24 24" style="transform:rotate(0deg)"><path d="M12 5l8 12H4z"/></svg></button><button data-k="left" aria-label="Sinistra" title="Sinistra (← / A)"><svg viewBox="0 0 24 24" style="transform:rotate(-90deg)"><path d="M12 5l8 12H4z"/></svg></button><button data-k="down" aria-label="Indietro" title="Indietro (↓ / S)"><svg viewBox="0 0 24 24" style="transform:rotate(180deg)"><path d="M12 5l8 12H4z"/></svg></button><button data-k="right" aria-label="Destra" title="Destra (→ / D)"><svg viewBox="0 0 24 24" style="transform:rotate(90deg)"><path d="M12 5l8 12H4z"/></svg></button></div>
 <div class="hint card" id="hint">Trascina per ruotare · rotella per zoom · tasto destro per spostare</div>
 <div class="bottom">
   <div class="strip card" id="strip" hidden></div>
@@ -695,13 +702,13 @@ function setInside(z){inside=z;const on=!!z;ceil.visible=on;
 function goInside(z){const r=INSIDE[z],was=!!inside||mode!=='model';
   const go=()=>{modelSetup();setInside(z);camera.fov=60;camera.updateProjectionMatrix();
     Object.assign(controls,{minDistance:.6,maxDistance:7,minPolarAngle:Math.PI*.2,maxPolarAngle:Math.PI*.62,rotateSpeed:.55});
-    hint.textContent='Sei dentro la stanza · trascina per guardarti intorno · rotella per avvicinarti · tasto destro per spostarti';
+    hint.textContent='Sei dentro · frecce o W A S D per camminare e girarti · trascina per guardarti intorno';
     if(was){camera.position.set(r.e[0],2.6,r.e[2]+(z==='sv'?0:.0));controls.target.set(...r.t);}
     fly(new THREE.Vector3(...r.e),new THREE.Vector3(...r.t),was?700:1400);};
   was?fade(go):go();}
 function modelSetup(){setInside(null);expoG.clear();expoHits.length=0;document.getElementById('mini').hidden=true;document.getElementById('b-calib').hidden=true;document.getElementById('calib').hidden=true;controls.enabled=true;el.style.cursor='grab';mode='model';cur=null;sph.visible=false;model.visible=true;arrows.clear();strip.hidden=true;camera.fov=45;camera.updateProjectionMatrix();
   Object.assign(controls,{enableZoom:true,enablePan:true,minDistance:3,maxDistance:55,maxPolarAngle:Math.PI*.46,rotateSpeed:1});
-  hint.textContent='Trascina per ruotare · rotella per zoom · tasto destro per spostare';}
+  hint.textContent='Frecce per spostarti · trascina per ruotare · rotella per zoom';}
 function toModel(){press('model');setFocus(null);tag.textContent='Showroom · 34,34 × 10,21 m · h 4,50 m';desc.textContent=MODEL_TXT;
   const go=()=>{const w=!!inside;modelSetup();if(camera.position.y<2||w)camera.position.set(L/2,9,WD+8);fly(new THREE.Vector3(L/2+4,24,WD+20),new THREE.Vector3(L/2,0,WD/2),1200);};
   (mode!=='model'||inside)?fade(go):go();}
@@ -854,12 +861,30 @@ const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;const wp=new THREE.Vector3(),w
     let top=0;for(const [dx,dz] of [[0,0],[.25,0],[-.25,0],[0,.25],[0,-.25]]){rc.set(new THREE.Vector3(b.position.x+dx,3.2,b.position.z+dz),dn);rc.far=3.2;const h=rc.intersectObjects(occ,false)[0];if(h)top=Math.max(top,h.point.y);}
     b.position.y=top>.3?Math.min(Math.max(top*.62,.7),1.8):1.3;});})();
 camera.position.set(L/2,30,WD+30);controls.target.set(L/2,0,WD/2);modelSetup();toModel();
+// ---- arrows: walk and turn when inside a room, slide the view from above ----
+const mv={up:0,down:0,left:0,right:0},pad=document.getElementById('pad'),mvRay=new THREE.Raycaster();
+const KEYS={ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right'};
+addEventListener('keydown',e=>{if(mode!=='model'||!xc.hidden||!pv.hidden||/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;const k=KEYS[e.code];if(!k)return;mv[k]=1;e.preventDefault();});
+addEventListener('keyup',e=>{const k=KEYS[e.code];if(k)mv[k]=0;});addEventListener('blur',()=>{for(const k in mv)mv[k]=0;});
+pad.querySelectorAll('button').forEach(b=>{const k=b.dataset.k,on=e=>{e.preventDefault();mv[k]=1;b.classList.add('on');try{b.setPointerCapture(e.pointerId);}catch(_){}},off=()=>{mv[k]=0;b.classList.remove('on');};
+  b.addEventListener('pointerdown',on);['pointerup','pointercancel','lostpointercapture'].forEach(t=>b.addEventListener(t,off));b.addEventListener('contextmenu',e=>e.preventDefault());});
+function blockedAt(c,dir,dist){const blk=occluders().filter(solid);for(const h of [.4,1.1]){mvRay.set(new THREE.Vector3(c.x,h,c.z),dir);mvRay.far=dist+.3;if(mvRay.intersectObjects(blk,false).length)return true;}return false;}
+function moveStep(dt){const c=camera.position,t=controls.target,f=new THREE.Vector3(t.x-c.x,0,t.z-c.z);if(f.lengthSq()<1e-6)return;f.normalize();
+  const fw=mv.up-mv.down,tr=mv.left-mv.right;
+  if(inside){if(tr){const a=tr*1.7*dt,dx=t.x-c.x,dz=t.z-c.z,co=Math.cos(a),si=Math.sin(a);t.x=c.x+dx*co+dz*si;t.z=c.z-dx*si+dz*co;}   // turn on the spot
+    if(fw){const d=fw*1.6*dt,dir=f.clone().multiplyScalar(Math.sign(d));
+      if(!blockedAt(c,dir,Math.abs(d))){c.addScaledVector(f,d);t.addScaledVector(f,d);}
+      else{for(const s of [1,-1]){const sd=new THREE.Vector3(-dir.z*s,0,dir.x*s).add(dir).normalize();if(!blockedAt(c,sd,Math.abs(d)*.7)){c.addScaledVector(sd,Math.abs(d)*.7);t.addScaledVector(sd,Math.abs(d)*.7);break;}}}}}   // slide along walls
+  else{const sp=Math.max(3,c.distanceTo(t)*.6)*dt,r=new THREE.Vector3(-f.z,0,f.x);const m=f.multiplyScalar(fw*sp).add(r.multiplyScalar(-tr*sp));
+    c.add(m);t.add(m);t.x=Math.max(0,Math.min(L,t.x));t.z=Math.max(0,Math.min(WD,t.z));}}
 renderer.setAnimationLoop(now=>{
   if(anim){const t=Math.min(1,(now-anim.t0)/anim.d),e=ease(t);camera.position.lerpVectors(anim.p0,anim.p1,e);controls.target.lerpVectors(anim.q0,anim.q1,e);
     if(t>=1){const cb=anim.cb;anim=null;cb&&cb();}}
   stepWalls(now);seeThrough();if(mode==='pano')drawMini();animArrows(now);const dtm=now-(window.__lt||now);window.__lt=now;stepDoors(dtm);
-  if(mode==='model'&&inside){const r=ZR[inside],t=controls.target,c=camera.position,cl=(v,a,b)=>Math.max(a,Math.min(b,v));
-    if(!anim){t.x=cl(t.x,r[0]+.3,r[1]-.3);t.z=cl(t.z,r[2]+.3,r[3]-.3);t.y=cl(t.y,.4,2.6);c.x=cl(c.x,r[0]+.15,r[1]-.15);c.z=cl(c.z,r[2]+.15,r[3]-.15);c.y=cl(c.y,.5,3.4);}
+  if(pad.hidden!==(mode!=='model'))pad.hidden=mode!=='model';if(mode==='model'&&!anim&&(mv.up||mv.down||mv.left||mv.right))moveStep(Math.min(dtm,50)/1000);
+  if(mode==='model'&&inside){const t=controls.target,c=camera.position,cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+    if(!anim){t.x=cl(t.x,.3,L-.3);t.z=cl(t.z,.3,WD-.3);t.y=cl(t.y,.4,2.6);c.x=cl(c.x,.2,L-.2);c.z=cl(c.z,.2,WD-.2);c.y=cl(c.y,.5,3.4);
+      for(const z in ZR){const r=ZR[z];if(z!==inside&&c.x>r[0]&&c.x<r[1]&&c.z>r[2]&&c.z<r[3]){inside=z;setFocus(z);break;}}}
     walls.forEach(w=>w.g.visible=true);}
   else if(mode==='model'&&!wallsDown)walls.forEach(w=>{w.g.getWorldPosition(wp);wn.copy(w.n);if(w.zvw)wn.applyQuaternion(zv.quaternion);
     const toCam=new THREE.Vector3(camera.position.x-wp.x,0,camera.position.z-wp.z);w.g.visible=wn.dot(toCam)<(w.zvw?0.3:1.5);});
