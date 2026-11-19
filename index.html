@@ -519,7 +519,8 @@ PTS.forEach(p=>{const g=new THREE.Group();g.position.set(p.X,0,p.Y);g.userData.z
     g.fillStyle='#d9b27c';g.beginPath();g.arc(52,48,30,0,7);g.fill();g.fillStyle='#1b1610';g.textAlign='center';g.textBaseline='middle';g.font='700 19px Inter,sans-serif';g.fillText('360\u00b0',52,50);
     g.fillStyle='#f4efe6';g.font='600 '+(p.lbl.length>2?42:48)+'px "Space Grotesk",sans-serif';g.fillText(p.lbl,(96+244)/2,52);}),depthTest:false}));s.scale.set(.8,.3,1);s.position.y=.95;s.renderOrder=5;g.add(s);
   const st=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,.84,6),new THREE.MeshBasicMaterial({color:0xf4efe6,transparent:true,opacity:.5}));st.position.y=.43;st.userData={op:.5,stick:1};g.add(st);
-  const hit=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,1.4,12),new THREE.MeshBasicMaterial({visible:false}));hit.position.y=.7;hit.userData.key=p.id;g.add(hit);pins.push(hit);});
+  // clickable only on its floor disc or its label, so doors and furniture behind it stay clickable
+  const hit=new THREE.Mesh(new THREE.CylinderGeometry(.24,.24,.08,16),new THREE.MeshBasicMaterial({visible:false}));hit.position.y=.04;hit.userData.key=p.id;g.add(hit);pins.push(hit);s.userData.key=p.id;pins.push(s);});
 
 // ================= 360 =================
 const loader=new THREE.TextureLoader(),texCache={};
@@ -773,19 +774,22 @@ el.addEventListener('pointermove',e=>{if(mode!=='pano'||!look.drag)return;const 
 const live=o=>{for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;};
 const solid=o=>live(o)&&!(o.material&&o.material.transparent&&o.material.opacity<.5);
 function modelTarget(e){ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ptr,camera);
-  const b=ray.intersectObjects(badges.filter(live))[0];if(b)return{badge:b.object};          // labels are drawn on top: they win
-  const hits=ray.intersectObjects(pickPins.concat(doorHits.filter(live),occluders().filter(solid)),false);
+  const b=ray.intersectObjects(badges.filter(live).concat(pickPins.filter(o=>o.isSprite&&live(o))))[0];   // labels are drawn on top: they win
+  if(b)return b.object.userData.key?{pin:b.object.userData.key}:{badge:b.object};
+  const hits=ray.intersectObjects(pickPins.filter(o=>!o.isSprite).concat(doorHits.filter(live),occluders().filter(solid)),false);
   for(const h of hits){if(pickPins.includes(h.object))return{pin:h.object.userData.key};
     if(h.object.userData.door&&doorHits.includes(h.object))return{door:h.object.userData.door};
     return null;}                                                                                  // first thing hit is a wall or furniture: nothing to do
   return null;}
+function doorCard(d){const c=new THREE.Box3().setFromObject(d.hinge).getCenter(new THREE.Vector3());let best=null,bd=.9;
+  for(const k in INFO){const it=INFO[k];if(!it.pos)continue;const dd=Math.hypot(it.pos[0]-c.x,it.pos[1]-c.z);if(dd<bd){bd=dd;best=k;}}return best;}
 function panoTarget(e){const x=pick(e,expoHits.filter(live));if(x)return{expo:x.object.userData.expo};const h=pick(e,arrowHits.filter(live));if(h)return{pin:h.object.userData.key};return null;}
 el.addEventListener('pointerup',e=>{const d=down;down=null;if(!d)return;
   const tol=d[3]==='mouse'?5:12;if(Math.hypot(e.clientX-d[0],e.clientY-d[1])>tol||performance.now()-d[2]>450){lastTap=null;return;}   // a drag or a long press is not a click
   if(xcOpen){closeCard();lastTap=null;return;}                                                   // first tap outside an open card just closes it
   if(mode==='model'){const t=modelTarget(e);if(!t)return;
     if(t.badge){const u=t.badge.userData;if(INFO[String(u.n)]){openCard(String(u.n));return;}tag.textContent='Articolo '+u.n;desc.textContent=(u.name||'Articolo n. '+u.n+' (nome da completare)')+' \u00b7 posizione dalla piantina dello showroom.';return;}
-    if(t.door){toggleDoor(t.door);return;}
+    if(t.door){const k=doorCard(t.door);if(k)openCard(k);else toggleDoor(t.door);return;}   // a door that is an exhibit opens its card
     if(t.pin)show(t.pin);return;}
   const t=panoTarget(e);if(t&&t.expo){openCard(t.expo);lastTap=null;return;}if(t&&t.pin){lastTap=null;show(t.pin);return;}
   // double click / double tap on empty space: walk to the shot that lies in that direction
