@@ -832,15 +832,24 @@ const WALLCOL=new Set([0x2a2b2e,0x3a3b3e,0x4a4b4e,0x5b4632,0xc59a68]),tall=[],wa
 model.traverse(o=>{if(!o.isMesh||!o.geometry||o.geometry.type!=='BoxGeometry')return;const h=o.geometry.parameters.height;
   if(h<2.5||!WALLCOL.has(o.material.color.getHex()))return;let q=o.parent,inZv=false;while(q){if(q===zv)inZv=true;q=q.parent;}
   if(inZv&&o.parent!==zvDoorWall)return;tall.push({o,h,y:o.position.y});});
+// everything else that stands floor-to-ceiling (white partitions, glass fronts, black frames, oak panels, fluted strips) lowers too; door leaves stay
+{const bb=new THREE.Box3();model.traverse(o=>{if(!o.isMesh||!o.geometry||!o.geometry.parameters||o.userData.door||o===ceil||tall.find(t=>t.o===o))return;
+  const g=o.geometry.type;if(g!=='BoxGeometry'&&g!=='CylinderGeometry')return;const h=o.geometry.parameters.height;if(!(h>=2.45)||Math.abs(o.scale.y-1)>1e-3)return;
+  let q=o.parent;while(q){if(q===zv&&o.parent!==zvDoorWall)return;q=q.parent;}
+  bb.setFromObject(o);if(bb.min.y>.2||bb.max.y-bb.min.y<2.3)return;tall.push({o,h,y:o.position.y});});}
+// things that only make sense with the walls up (lintels over the openings, exit sign, ceiling spots, the corner pipe) disappear while they are down
+{const bb=new THREE.Box3();model.traverse(o=>{if(!o.isMesh||o===ceil||o.userData.door||tall.find(t=>t.o===o)||wallExtras.includes(o))return;let q=o.parent;while(q){if(q.userData&&q.userData.zone)return;q=q.parent;}
+  bb.setFromObject(o);const c=o.material.color?o.material.color.getHex():0;
+  if((bb.min.y>1.9&&bb.max.y>2.95&&bb.max.y<3.2)||bb.min.y>4||c===0x2f9a52||(o.geometry.type==="PlaneGeometry"&&bb.min.y>.5&&bb.max.y<3.2)||(c===0x141516&&bb.min.y>2.3)||(bb.min.y<.05&&bb.max.y>2.9&&bb.max.x-bb.min.x<.12&&bb.max.z-bb.min.z<.12))wallExtras.push(o);});}
 walls.forEach(w=>w.g.children.forEach(c=>{if(!tall.find(t=>t.o===c))wallExtras.push(c);}));
 let wallsDown=false,wallAnim=null;const LOW=.22;
 // walls standing between the camera and what you are looking at turn see-through, so nothing blocks the view
-const tallM=tall.map(t=>{t.o.material=t.o.material.clone();t.o.material.transparent=true;return t.o;});
+const tallM=tall.map(t=>{const m0=t.o.material;t.o.material=m0.clone();t.o.userData.op0=m0.transparent?m0.opacity:1;t.o.material.transparent=true;return t.o;});
 const seeRay=new THREE.Raycaster(),seeOff=[[0,0],[1.6,0],[-1.6,0],[0,1.6],[0,-1.6]],seeTmp=new THREE.Vector3();
 function seeThrough(){const hit=new Set();if(mode==='model'&&!wallsDown){seeOff.forEach(([dx,dz])=>{seeTmp.set(controls.target.x+dx,.6,controls.target.z+dz);
     const dir=seeTmp.clone().sub(camera.position),dist=dir.length();seeRay.set(camera.position,dir.normalize());seeRay.far=dist-.2;
     seeRay.intersectObjects(tallM,false).forEach(h=>hit.add(h.object));});}
-  tallM.forEach(o=>{const t=hit.has(o)?.12:1,m=o.material;m.opacity+= (t-m.opacity)*.25;m.depthWrite=m.opacity>.9;});}
+  tallM.forEach(o=>{const b=o.userData.op0,t=hit.has(o)?Math.min(.12,b):b,m=o.material;m.opacity+= (t-m.opacity)*.25;m.depthWrite=m.opacity>.9&&b>=1;});}
 function setWalls(down){wallsDown=down;const b=document.getElementById('b-walls');b.setAttribute('aria-pressed',down);b.textContent=down?'Alza muri':'Abbassa muri';
   wallAnim={t0:performance.now(),d:reduce?1:700,from:tall.map(t=>t.o.scale.y),to:down?LOW:1};
   if(down){POSTERS.concat(wallExtras).forEach(o=>o.visible=false);}}
