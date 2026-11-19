@@ -764,28 +764,41 @@ const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let down=null;
 const look={yaw:0,pitch:0,drag:null};
 function applyLook(){camera.rotation.set(look.pitch,look.yaw,0,'YXZ');}const el=renderer.domElement;
 function pick(e,objs){ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ptr,camera);return ray.intersectObjects(objs)[0];}
-el.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];
+el.addEventListener('pointerdown',e=>{down=(e.button===0&&e.isPrimary)?[e.clientX,e.clientY,performance.now(),e.pointerType]:null;
   if(mode==='pano'){look.drag={x:e.clientX,y:e.clientY,yaw:look.yaw,pitch:look.pitch};el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';}});
 el.addEventListener('pointermove',e=>{if(mode!=='pano'||!look.drag)return;const k=(camera.fov*Math.PI/180)/innerHeight;
   look.yaw=look.drag.yaw+(e.clientX-look.drag.x)*k;look.pitch=Math.max(-1.45,Math.min(1.45,look.drag.pitch+(e.clientY-look.drag.y)*k));applyLook();});
 ['pointerup','pointercancel','pointerleave'].forEach(t=>el.addEventListener(t,()=>{if(look.drag){look.drag=null;el.style.cursor='grab';}}));
-el.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6)return;
-  if(mode==='model'){const b=pick(e,badges);if(b&&INFO[String(b.object.userData.n)]){openCard(String(b.object.userData.n));return;}if(b){const u=b.object.userData;tag.textContent='Articolo '+u.n;desc.textContent=(u.name||'Articolo n. '+u.n+' (nome da completare)')+' · posizione dalla piantina dello showroom.';return;}
-    ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ptr,camera);
-    const hp=ray.intersectObjects(pickPins)[0],hd=ray.intersectObjects(doorHits)[0];
-    if(hd&&(!hp||hd.distance<hp.distance)){toggleDoor(hd.object.userData.door);return;}
-    if(hp)show(hp.object.userData.key);}
-  else{const x=pick(e,expoHits);if(x){openCard(x.object.userData.expo);lastTap=null;return;}const h=pick(e,arrowHits);if(h){lastTap=null;show(h.object.userData.key);return;}
-    // double click / double tap on empty space: walk to the shot that lies in that direction
-    const t=performance.now();if(lastTap&&t-lastTap.t<350&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<40){lastTap=null;walkToward(e);}else lastTap={t,x:e.clientX,y:e.clientY};}});
+// ---- what is really under the pointer: hidden or faded things never count, walls/furniture in front block what is behind ----
+const live=o=>{for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;};
+const solid=o=>live(o)&&!(o.material&&o.material.transparent&&o.material.opacity<.5);
+function modelTarget(e){ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ptr,camera);
+  const b=ray.intersectObjects(badges.filter(live))[0];if(b)return{badge:b.object};          // labels are drawn on top: they win
+  const hits=ray.intersectObjects(pickPins.concat(doorHits.filter(live),occluders().filter(solid)),false);
+  for(const h of hits){if(pickPins.includes(h.object))return{pin:h.object.userData.key};
+    if(h.object.userData.door&&doorHits.includes(h.object))return{door:h.object.userData.door};
+    return null;}                                                                                  // first thing hit is a wall or furniture: nothing to do
+  return null;}
+function panoTarget(e){const x=pick(e,expoHits.filter(live));if(x)return{expo:x.object.userData.expo};const h=pick(e,arrowHits.filter(live));if(h)return{pin:h.object.userData.key};return null;}
+el.addEventListener('pointerup',e=>{const d=down;down=null;if(!d)return;
+  const tol=d[3]==='mouse'?5:12;if(Math.hypot(e.clientX-d[0],e.clientY-d[1])>tol||performance.now()-d[2]>450){lastTap=null;return;}   // a drag or a long press is not a click
+  if(xcOpen){closeCard();lastTap=null;return;}                                                   // first tap outside an open card just closes it
+  if(mode==='model'){const t=modelTarget(e);if(!t)return;
+    if(t.badge){const u=t.badge.userData;if(INFO[String(u.n)]){openCard(String(u.n));return;}tag.textContent='Articolo '+u.n;desc.textContent=(u.name||'Articolo n. '+u.n+' (nome da completare)')+' \u00b7 posizione dalla piantina dello showroom.';return;}
+    if(t.door){toggleDoor(t.door);return;}
+    if(t.pin)show(t.pin);return;}
+  const t=panoTarget(e);if(t&&t.expo){openCard(t.expo);lastTap=null;return;}if(t&&t.pin){lastTap=null;show(t.pin);return;}
+  // double click / double tap on empty space: walk to the shot that lies in that direction
+  const now=performance.now();if(lastTap&&now-lastTap.t<350&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<40){lastTap=null;walkToward(e);}else lastTap={t:now,x:e.clientX,y:e.clientY};});
 let lastTap=null;
 function walkToward(e){ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ptr,camera);
   const d=ray.ray.direction,a=Math.atan2(d.z,d.x),c=camera.position;let best=null,bs=1e9;
   arrows.children.forEach(g=>{const dx=g.position.x-c.x,dz=g.position.z-c.z,da=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-a),Math.cos(Math.atan2(dz,dx)-a)));
     if(da>.7)return;const sc=da+Math.hypot(dx,dz)*.05;if(sc<bs){bs=sc;best=g;}});   // within ~40°, closest in angle wins
   if(best)show(best.userData.disc.userData.key);}
-el.addEventListener('pointermove',e=>{const h=pick(e,mode==='model'?pickPins.concat(badges.filter(b=>b.visible),doorHits):arrowHits.concat(expoHits));el.style.cursor=h?'pointer':'grab';
-  if(mode==='pano')arrows.children.forEach(g=>g.userData.hover=!!(h&&h.object===g.userData.disc));});
+let hovT=0;el.addEventListener('pointermove',e=>{if(e.buttons){return;}const now=performance.now();if(now-hovT<40)return;hovT=now;
+  const t=mode==='model'?modelTarget(e):panoTarget(e);el.style.cursor=t?'pointer':'grab';
+  if(mode==='pano')arrows.children.forEach(g=>g.userData.hover=!!(t&&t.pin===g.userData.disc.userData.key));});
 
 // ================= focus on a zone =================
 const ZR={sv:[23.29,34.34,6.96,10.21],A:[23.29,31.07,0,6.75],B:[15.68,23.29,0,6.75]};
