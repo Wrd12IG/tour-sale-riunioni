@@ -725,7 +725,7 @@ function show(id){const p=byId[id];press('tour');strip.hidden=false;
   [...strip.querySelectorAll('.th')].forEach(b=>b.setAttribute('aria-current',b.dataset.id===id));
   const th=strip.querySelector('.th[data-id="'+id+'"]');th&&th.scrollIntoView({block:'nearest',inline:'center',behavior:reduce?'auto':'smooth'});
   tag.textContent=({sv:'Stanza vendita',A:'Stanza A \u00b7 pergole 41\u201342',B:'Stanza B \u00b7 pergole 39\u201340'})[p.zone]+' \u00b7 punto '+p.lbl;
-  desc.textContent=p.t+' Tocca un punto 360° per spostarti.';hint.textContent='Tieni premuto e trascina per guardarti intorno';
+  desc.textContent=p.t+' Tocca un punto 360° per spostarti.';hint.textContent='Trascina per guardarti intorno \u00b7 rotella o due dita per zoomare';
   const eye=new THREE.Vector3(p.X,1.5,p.Y),prev=cur;
   const enter=()=>fade(()=>{mode='pano';cur=p;model.visible=false;sph.visible=true;sph.position.copy(eye);
     sphMat.uniforms.pano.value=pano(id);setRot(p);buildArrows(p);closeCard();buildExpo(p);document.getElementById('mini').hidden=false;document.getElementById('mini-z').textContent=({sv:'Stanza vendita',A:'Stanza A',B:'Stanza B'})[p.zone];
@@ -774,9 +774,19 @@ function applyLook(){camera.rotation.set(look.pitch,look.yaw,0,'YXZ');}const el=
 function pick(e,objs){ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ptr,camera);return ray.intersectObjects(objs)[0];}
 el.addEventListener('pointerdown',e=>{down=(e.button===0&&e.isPrimary)?[e.clientX,e.clientY,performance.now(),e.pointerType]:null;
   if(mode==='pano'){look.drag={x:e.clientX,y:e.clientY,yaw:look.yaw,pitch:look.pitch};el.setPointerCapture(e.pointerId);el.style.cursor='grabbing';}});
-el.addEventListener('pointermove',e=>{if(mode!=='pano'||!look.drag)return;const k=(camera.fov*Math.PI/180)/innerHeight;
+el.addEventListener('pointermove',e=>{if(mode!=='pano'||!look.drag||pinch)return;const k=(camera.fov*Math.PI/180)/innerHeight;
   look.yaw=look.drag.yaw+(e.clientX-look.drag.x)*k;look.pitch=Math.max(-1.45,Math.min(1.45,look.drag.pitch+(e.clientY-look.drag.y)*k));applyLook();});
 ['pointerup','pointercancel','pointerleave'].forEach(t=>el.addEventListener(t,()=>{if(look.drag){look.drag=null;el.style.cursor='grab';}}));
+// ---- zoom in the 360: mouse wheel / trackpad pinch, two-finger pinch on touch, + and - keys ----
+const FOV_MIN=30,FOV_MAX=90,touchPts=new Map();let pinch=null;
+function setFov(f){camera.fov=Math.max(FOV_MIN,Math.min(FOV_MAX,f));camera.updateProjectionMatrix();}
+el.addEventListener('wheel',e=>{if(mode!=='pano')return;e.preventDefault();setFov(camera.fov*Math.exp(e.deltaY*(e.ctrlKey?.01:.0015)));},{passive:false});
+el.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;touchPts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(mode==='pano'&&touchPts.size===2){const [a,b]=[...touchPts.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),fov:camera.fov};look.drag=null;down=null;}});
+el.addEventListener('pointermove',e=>{if(!touchPts.has(e.pointerId))return;touchPts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pinch&&touchPts.size===2&&mode==='pano'){const [a,b]=[...touchPts.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(d>10)setFov(pinch.fov*pinch.d/d);}});
+['pointerup','pointercancel'].forEach(t=>el.addEventListener(t,e=>{touchPts.delete(e.pointerId);if(touchPts.size<2)pinch=null;}));
+addEventListener('keydown',e=>{if(mode!=='pano'||!xc.hidden||!pv.hidden)return;if(e.key==='+'||e.key==='=')setFov(camera.fov/1.15);else if(e.key==='-'||e.key==='_')setFov(camera.fov*1.15);});
 // ---- what is really under the pointer: hidden or faded things never count, walls/furniture in front block what is behind ----
 const live=o=>{for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;};
 const solid=o=>live(o)&&!(o.material&&o.material.transparent&&o.material.opacity<.5);
