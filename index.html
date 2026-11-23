@@ -568,6 +568,45 @@ function autoRot(p){let sx=0,sy=0;PTS.forEach(q=>{if(q===p||q.zone!==p.zone)retu
   return (sx||sy)?Math.atan2(sy,sx):0;}
 function rotDeg(p){return (rotUser[p.id]??ROTFIX[p.id]??0);}
 function setRot(p){sphMat.uniforms.rot.value=p.rot*Math.PI/180;}
+// ---- high-quality sales room: multi-resolution cube tiles (512 px tiles, 4 levels up to 6144 px per face), loaded only where you look ----
+// hq/NN/L/F_R_C.jpg exists only on the hosted site; the artifact keeps the single 4K photo. R = rotation from the new shot to the old one (SIFT), so markers stay put.
+const HQ={"n094":{"n":"01","R":[-0.999309,-0.036338,-0.007821,-0.035992,0.998529,-0.040554,0.009283,-0.040245,-0.999147]},"n096":{"n":"02","R":[-0.999667,-0.025775,-0.00079,-0.025697,0.998266,-0.052955,0.002154,-0.052917,-0.998597]},"n097":{"n":"03","R":[-0.999654,-0.011875,0.023453,-0.01292,0.998907,-0.04491,-0.022895,-0.045197,-0.998716]},"n098":{"n":"04","R":[-0.999429,-0.029853,0.015815,-0.03045,0.998775,-0.039005,-0.014631,-0.039464,-0.999114]},"n099":{"n":"05","R":[-0.999302,-0.031938,0.01937,-0.032766,0.998491,-0.04406,-0.017933,-0.044663,-0.998841]},"n100":{"n":"06","R":[-0.99833,-0.053315,-0.022249,-0.052512,0.997999,-0.035224,0.024083,-0.033997,-0.999132]},"n101":{"n":"07","R":[-0.999422,-0.024499,0.023576,-0.025242,0.999178,-0.031733,-0.022779,-0.03231,-0.999218]},"n102":{"n":"08","R":[-0.998129,-0.050779,0.034047,-0.052263,0.997655,-0.044197,-0.031723,-0.045894,-0.998442]},"n103":{"n":"09","R":[-0.999431,-0.029797,0.01581,-0.030268,0.999079,-0.030409,-0.014889,-0.03087,-0.999412]},"n104":{"n":"10","R":[-0.99935,-0.034704,0.00979,-0.035074,0.998564,-0.040495,-0.00837,-0.040812,-0.999132]},"n106":{"n":"12","R":[-0.998491,-0.049836,-0.023045,-0.048854,0.997948,-0.041397,0.025061,-0.040208,-0.998877]},"n107":{"n":"13","R":[-0.998915,-0.04348,0.016673,-0.044188,0.998023,-0.044704,-0.014697,-0.045392,-0.998861]},"n108":{"n":"14","R":[-0.999122,-0.032905,-0.025951,-0.032015,0.998909,-0.033993,0.027041,-0.033133,-0.999085]},"n109":{"n":"15","R":[-0.999138,-0.040935,0.00694,-0.041162,0.998483,-0.036566,-0.005433,-0.03682,-0.999307]},"n110":{"n":"16","R":[-0.999294,-0.035278,0.012889,-0.035818,0.998374,-0.044338,-0.011303,-0.044768,-0.998933]}};
+let HQ_ON=false;fetch('hq/01/0/f_0_0.jpg',{method:'HEAD'}).then(r=>{HQ_ON=r.ok&&/image/.test(r.headers.get('content-type')||'');}).catch(()=>{});
+const HQ_LEV=[512,1536,3072,6144],HQ_T=512,HQ_R=50,HQ_FACES={f:[[-1,0,0],[0,0,-1],[0,1,0]],r:[[0,0,-1],[1,0,0],[0,1,0]],b:[[1,0,0],[0,0,1],[0,1,0]],l:[[0,0,1],[-1,0,0],[0,1,0]],u:[[0,1,0],[0,0,-1],[1,0,0]],d:[[0,-1,0],[0,0,-1],[-1,0,0]]};
+let hqP=null,hqLoads=0,hqFrame=0;const hqLoader=new THREE.TextureLoader(),hqFr=new THREE.Frustum(),hqPM=new THREE.Matrix4(),hqLook=new THREE.Vector3();
+function HqPano(p){const h=HQ[p.id];this.dir='hq/'+h.n+'/';this.tiles={};this.ready=false;this.g=new THREE.Group();this.g.matrixAutoUpdate=false;
+  // world = RotY(rot) · R · diag(-1,1,-1) · tile position
+  const r=h.R,Rm=new THREE.Matrix4().set(r[0],r[1],r[2],0,r[3],r[4],r[5],0,r[6],r[7],r[8],0,0,0,0,1),M=new THREE.Matrix4().makeScale(-1,1,-1),Y=new THREE.Matrix4().makeRotationY(p.rot*Math.PI/180);
+  this.g.matrix.copy(Y).multiply(Rm).multiply(M).setPosition(p.X,1.5,p.Y);this.g.updateMatrixWorld(true);this.inv=new THREE.Matrix4().copy(this.g.matrixWorld).invert();scene.add(this.g);
+  // soft floor-coloured patch over the tripod at the nadir, as on the 4K photo
+  const d=new THREE.Mesh(new THREE.CircleGeometry(HQ_R*.42,48),new THREE.MeshBasicMaterial({map:hqNadirTex(),transparent:true,depthTest:false,depthWrite:false}));d.material.toneMapped=false;
+  d.position.set(0,-HQ_R*.999,0).applyMatrix4(this.g.matrixWorld);d.lookAt(p.X,1.5,p.Y);d.renderOrder=-5;d.frustumCulled=false;scene.add(d);this.nadir=d;}
+let _hqN=null;function hqNadirTex(){if(_hqN)return _hqN;const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d'),g=x.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(204,201,196,1)');g.addColorStop(.55,'rgba(204,201,196,.95)');g.addColorStop(1,'rgba(204,201,196,0)');x.fillStyle=g;x.fillRect(0,0,128,128);_hqN=new THREE.CanvasTexture(c);_hqN.encoding=THREE.sRGBEncoding;return _hqN;}
+HqPano.prototype.tile=function(l,f,ty,tx){const k=l+'/'+f+'_'+ty+'_'+tx;let t=this.tiles[k];if(t)return t;
+  const T=HQ_LEV[l]/HQ_T,F=HQ_FACES[f],fw=new THREE.Vector3(...F[0]),rt=new THREE.Vector3(...F[1]),up=new THREE.Vector3(...F[2]);
+  const a0=-1+2*tx/T,a1=-1+2*(tx+1)/T,b1=1-2*ty/T,b0=1-2*(ty+1)/T,pt=(a,b)=>fw.clone().addScaledVector(rt,a).addScaledVector(up,b).multiplyScalar(HQ_R);
+  const c=[pt(a0,b1),pt(a1,b1),pt(a0,b0),pt(a1,b0)],ctr=pt((a0+a1)/2,(b0+b1)/2);
+  t={l,url:this.dir+l+'/'+f+'_'+ty+'_'+tx+'.jpg',c,ctr,sph:new THREE.Sphere(ctr,ctr.distanceTo(c[0])).applyMatrix4(this.g.matrixWorld),state:0,mesh:null,used:0};this.tiles[k]=t;return t;};
+HqPano.prototype.load=function(t,cb){const self=this;t.state=1;hqLoads++;
+  hqLoader.load(t.url,tex=>{hqLoads--;if(self.dead){tex.dispose();return;}tex.encoding=THREE.sRGBEncoding;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;
+    const g=new THREE.BufferGeometry(),c=t.c;g.setAttribute('position',new THREE.Float32BufferAttribute([c[0].x,c[0].y,c[0].z,c[1].x,c[1].y,c[1].z,c[2].x,c[2].y,c[2].z,c[3].x,c[3].y,c[3].z],3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,1,1,2,3]);
+    const mt=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide,depthTest:false,depthWrite:false});mt.toneMapped=false;
+    const m=new THREE.Mesh(g,mt);m.renderOrder=-10+t.l;m.frustumCulled=false;t.mesh=m;t.state=2;self.g.add(m);if(cb)cb();},undefined,()=>{hqLoads--;t.state=3;if(cb)cb();});};
+HqPano.prototype.loadBase=function(done){let left=6;Object.keys(HQ_FACES).forEach(f=>{const t=this.tile(0,f,0,0);this.load(t,()=>{if(--left===0){this.ready=![...Object.values(this.tiles)].some(q=>q.l===0&&q.state===3);done(this.ready);}});});};
+HqPano.prototype.dispose=function(){this.dead=true;if(this.nadir){scene.remove(this.nadir);this.nadir.geometry.dispose();this.nadir.material.dispose();}for(const k in this.tiles){const t=this.tiles[k];if(t.mesh){t.mesh.material.map.dispose();t.mesh.material.dispose();t.mesh.geometry.dispose();}}scene.remove(this.g);};
+HqPano.prototype.evict=function(){const a=[];for(const k in this.tiles){const t=this.tiles[k];if(t.state===2&&t.l>0)a.push(t);}if(a.length<=320)return;a.sort((x,y)=>x.used-y.used);
+  for(let i=0;i<a.length-320;i++){const t=a[i];this.g.remove(t.mesh);t.mesh.material.map.dispose();t.mesh.material.dispose();t.mesh.geometry.dispose();t.mesh=null;t.state=0;}};
+function hqUpdate(){const P=hqP;if(!P||!P.ready||mode!=='pano')return;hqFrame++;camera.updateMatrixWorld();hqPM.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);hqFr.setFromProjectionMatrix(hqPM);
+  camera.getWorldDirection(hqLook);const ll=hqLook.clone().transformDirection(P.inv);
+  const need=renderer.domElement.height/Math.tan(camera.fov*Math.PI/360);let top=HQ_LEV.length-1;for(let l=1;l<HQ_LEV.length;l++)if(HQ_LEV[l]>=need){top=l;break;}
+  const q=[];for(let l=1;l<=top;l++){const T=HQ_LEV[l]/HQ_T;for(const f in HQ_FACES){if(new THREE.Vector3(...HQ_FACES[f][0]).dot(ll)<-.75)continue;
+    for(let ty=0;ty<T;ty++)for(let tx=0;tx<T;tx++){const t=P.tile(l,f,ty,tx);if(!hqFr.intersectsSphere(t.sph))continue;t.used=hqFrame;if(t.state===0)q.push(t);}}}
+  q.sort((a,b)=>a.l-b.l||b.ctr.dot(ll)-a.ctr.dot(ll));for(let i=0;i<q.length&&hqLoads<6;i++)P.load(q[i]);P.evict();}
+function hqEnter(p){if(hqP){hqP.dispose();hqP=null;}if(!HQ_ON||!HQ[p.id])return;const P=new HqPano(p);hqP=P;
+  P.loadBase(ok=>{if(hqP!==P)return;if(ok)sph.visible=false;else{P.dispose();hqP=null;}});}
+function hqLeave(){if(hqP){hqP.dispose();hqP=null;}}
 // 360 view: the other points stand exactly where they are in the model and on the minimap (same rectangle), with a constant on-screen size
 // 360 view: small flat gold markers lying on the floor, at the same spots as the model and the minimap
 // floor pin: a plain translucent disc with a white ring
@@ -706,7 +745,7 @@ function goInside(z){const r=INSIDE[z],was=!!inside||mode!=='model';
     if(was){camera.position.set(r.e[0],2.6,r.e[2]+(z==='sv'?0:.0));controls.target.set(...r.t);}
     fly(new THREE.Vector3(...r.e),new THREE.Vector3(...r.t),was?700:1400);};
   was?fade(go):go();}
-function modelSetup(){setInside(null);expoG.clear();expoHits.length=0;document.getElementById('mini').hidden=true;document.getElementById('b-calib').hidden=true;document.getElementById('calib').hidden=true;controls.enabled=true;el.style.cursor='grab';mode='model';cur=null;sph.visible=false;model.visible=true;arrows.clear();strip.hidden=true;camera.fov=45;camera.updateProjectionMatrix();
+function modelSetup(){setInside(null);hqLeave();expoG.clear();expoHits.length=0;document.getElementById('mini').hidden=true;document.getElementById('b-calib').hidden=true;document.getElementById('calib').hidden=true;controls.enabled=true;el.style.cursor='grab';mode='model';cur=null;sph.visible=false;model.visible=true;arrows.clear();strip.hidden=true;camera.fov=45;camera.updateProjectionMatrix();
   Object.assign(controls,{enableZoom:true,enablePan:true,minDistance:3,maxDistance:55,maxPolarAngle:Math.PI*.46,rotateSpeed:1});
   hint.textContent='Frecce per spostarti · trascina per ruotare · rotella per zoom';}
 function toModel(){press('model');setFocus(null);tag.textContent='Showroom · 34,34 × 10,21 m · h 4,50 m';desc.textContent=MODEL_TXT;
@@ -727,7 +766,7 @@ function show(id){const p=byId[id];press('tour');strip.hidden=false;
   tag.textContent=({sv:'Stanza vendita',A:'Stanza A \u00b7 pergole 41\u201342',B:'Stanza B \u00b7 pergole 39\u201340'})[p.zone]+' \u00b7 punto '+p.lbl;
   desc.textContent=p.t+' Tocca un punto 360° per spostarti.';hint.textContent='Trascina per guardarti intorno \u00b7 rotella o due dita per zoomare';
   const eye=new THREE.Vector3(p.X,1.5,p.Y),prev=cur;
-  const enter=()=>fade(()=>{mode='pano';cur=p;model.visible=false;sph.visible=true;sph.position.copy(eye);
+  const enter=()=>fade(()=>{mode='pano';cur=p;model.visible=false;sph.visible=true;sph.position.copy(eye);hqEnter(p);
     sphMat.uniforms.pano.value=pano(id);setRot(p);buildArrows(p);closeCard();buildExpo(p);document.getElementById('mini').hidden=false;document.getElementById('mini-z').textContent=({sv:'Stanza vendita',A:'Stanza A',B:'Stanza B'})[p.zone];
     camera.fov=75;camera.updateProjectionMatrix();
     controls.enabled=false;camera.rotation.order='YXZ';
@@ -779,7 +818,7 @@ el.addEventListener('pointermove',e=>{if(mode!=='pano'||!look.drag||pinch)return
 ['pointerup','pointercancel','pointerleave'].forEach(t=>el.addEventListener(t,()=>{if(look.drag){look.drag=null;el.style.cursor='grab';}}));
 // ---- zoom in the 360: mouse wheel / trackpad pinch, two-finger pinch on touch, + and - keys ----
 const FOV_MIN=30,FOV_MAX=90,touchPts=new Map();let pinch=null;
-function setFov(f){camera.fov=Math.max(FOV_MIN,Math.min(FOV_MAX,f));camera.updateProjectionMatrix();}
+function setFov(f){camera.fov=Math.max(hqP&&hqP.ready?10:FOV_MIN,Math.min(FOV_MAX,f));camera.updateProjectionMatrix();}
 el.addEventListener('wheel',e=>{if(mode!=='pano')return;e.preventDefault();setFov(camera.fov*Math.exp(e.deltaY*(e.ctrlKey?.01:.0015)));},{passive:false});
 el.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;touchPts.set(e.pointerId,[e.clientX,e.clientY]);
   if(mode==='pano'&&touchPts.size===2){const [a,b]=[...touchPts.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),fov:camera.fov};look.drag=null;down=null;}});
@@ -908,7 +947,7 @@ renderer.setAnimationLoop(now=>{
   else if(mode==='model'&&!wallsDown)walls.forEach(w=>{w.g.getWorldPosition(wp);wn.copy(w.n);if(w.zvw)wn.applyQuaternion(zv.quaternion);
     const toCam=new THREE.Vector3(camera.position.x-wp.x,0,camera.position.z-wp.z);w.g.visible=wn.dot(toCam)<(w.zvw?0.3:1.5);});
   if(mode==='model'&&wallsDown)walls.forEach(w=>w.g.visible=true);
-  if(mode!=='pano')controls.update();renderer.render(scene,camera);
+  if(mode!=='pano')controls.update();else hqUpdate();renderer.render(scene,camera);
 });
 })();
 </script>
