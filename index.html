@@ -588,14 +588,17 @@ HqPano.prototype.tile=function(l,f,ty,tx){const k=l+'/'+f+'_'+ty+'_'+tx;let t=th
   const a0=-1+2*tx/T,a1=-1+2*(tx+1)/T,b1=1-2*ty/T,b0=1-2*(ty+1)/T,pt=(a,b)=>fw.clone().addScaledVector(rt,a).addScaledVector(up,b).multiplyScalar(HQ_R);
   const c=[pt(a0,b1),pt(a1,b1),pt(a0,b0),pt(a1,b0)],ctr=pt((a0+a1)/2,(b0+b1)/2);
   t={l,url:this.dir+l+'/'+f+'_'+ty+'_'+tx+'.jpg',c,ctr,sph:new THREE.Sphere(ctr,ctr.distanceTo(c[0])).applyMatrix4(this.g.matrixWorld),state:0,mesh:null,used:0};this.tiles[k]=t;return t;};
+const hqBase=new Map();   // url -> Promise<texture> for the six level-0 faces, so a point opens straight in high quality
+function hqTex(url){if(!hqBase.has(url))hqBase.set(url,new Promise((ok,ko)=>hqLoader.load(url,ok,undefined,ko)));return hqBase.get(url);}
+function hqPrefetch(id){const h=HQ[id];if(!HQ_ON||!h)return Promise.resolve(false);return Promise.all(Object.keys(HQ_FACES).map(f=>hqTex('hq/'+h.n+'/0/'+f+'_0_0.jpg'))).then(()=>true,()=>false);}
 HqPano.prototype.load=function(t,cb){const self=this;t.state=1;hqLoads++;
-  hqLoader.load(t.url,tex=>{hqLoads--;if(self.dead){tex.dispose();return;}tex.encoding=THREE.sRGBEncoding;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;
+  (t.l===0?hqTex(t.url):new Promise((ok,ko)=>hqLoader.load(t.url,ok,undefined,ko))).then(tex=>{hqLoads--;if(self.dead){if(t.l>0)tex.dispose();return;}tex.encoding=THREE.sRGBEncoding;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;
     const g=new THREE.BufferGeometry(),c=t.c;g.setAttribute('position',new THREE.Float32BufferAttribute([c[0].x,c[0].y,c[0].z,c[1].x,c[1].y,c[1].z,c[2].x,c[2].y,c[2].z,c[3].x,c[3].y,c[3].z],3));
     g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,1,1,2,3]);
     const mt=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide,depthTest:false,depthWrite:false});mt.toneMapped=false;
-    const m=new THREE.Mesh(g,mt);m.renderOrder=-10+t.l;m.frustumCulled=false;t.mesh=m;t.state=2;self.g.add(m);if(cb)cb();},undefined,()=>{hqLoads--;t.state=3;if(cb)cb();});};
+    const m=new THREE.Mesh(g,mt);m.renderOrder=-10+t.l;m.frustumCulled=false;t.mesh=m;t.state=2;self.g.add(m);if(cb)cb();},()=>{hqLoads--;t.state=3;if(cb)cb();});};
 HqPano.prototype.loadBase=function(done){let left=6;Object.keys(HQ_FACES).forEach(f=>{const t=this.tile(0,f,0,0);this.load(t,()=>{if(--left===0){this.ready=![...Object.values(this.tiles)].some(q=>q.l===0&&q.state===3);done(this.ready);}});});};
-HqPano.prototype.dispose=function(){this.dead=true;if(this.nadir){scene.remove(this.nadir);this.nadir.geometry.dispose();this.nadir.material.dispose();}for(const k in this.tiles){const t=this.tiles[k];if(t.mesh){t.mesh.material.map.dispose();t.mesh.material.dispose();t.mesh.geometry.dispose();}}scene.remove(this.g);};
+HqPano.prototype.dispose=function(){this.dead=true;for(const k in this.tiles){const t=this.tiles[k];if(t.l===0&&t.mesh)t.mesh.material.map=null;}if(this.nadir){scene.remove(this.nadir);this.nadir.geometry.dispose();this.nadir.material.dispose();}for(const k in this.tiles){const t=this.tiles[k];if(t.mesh){if(t.mesh.material.map)t.mesh.material.map.dispose();t.mesh.material.dispose();t.mesh.geometry.dispose();}}scene.remove(this.g);};
 HqPano.prototype.evict=function(){const a=[];for(const k in this.tiles){const t=this.tiles[k];if(t.state===2&&t.l>0)a.push(t);}if(a.length<=320)return;a.sort((x,y)=>x.used-y.used);
   for(let i=0;i<a.length-320;i++){const t=a[i];this.g.remove(t.mesh);t.mesh.material.map.dispose();t.mesh.material.dispose();t.mesh.geometry.dispose();t.mesh=null;t.state=0;}};
 function hqUpdate(){const P=hqP;if(!P||!P.ready||mode!=='pano')return;hqFrame++;camera.updateMatrixWorld();hqPM.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);hqFr.setFromProjectionMatrix(hqPM);
@@ -605,7 +608,8 @@ function hqUpdate(){const P=hqP;if(!P||!P.ready||mode!=='pano')return;hqFrame++;
     for(let ty=0;ty<T;ty++)for(let tx=0;tx<T;tx++){const t=P.tile(l,f,ty,tx);if(!hqFr.intersectsSphere(t.sph))continue;t.used=hqFrame;if(t.state===0)q.push(t);}}}
   q.sort((a,b)=>a.l-b.l||b.ctr.dot(ll)-a.ctr.dot(ll));for(let i=0;i<q.length&&hqLoads<6;i++)P.load(q[i]);P.evict();}
 function hqEnter(p){if(hqP){hqP.dispose();hqP=null;}if(!HQ_ON||!HQ[p.id])return;const P=new HqPano(p);hqP=P;
-  P.loadBase(ok=>{if(hqP!==P)return;if(ok)sph.visible=false;else{P.dispose();hqP=null;}});}
+  P.loadBase(ok=>{if(hqP!==P)return;if(ok)sph.visible=false;else{P.dispose();hqP=null;sphMat.uniforms.pano.value=pano(p.id);sph.visible=true;}});
+  setTimeout(()=>arrows.children.forEach(g=>hqPrefetch(g.userData.disc.userData.key)),800);}   // warm up the points you can walk to
 function hqLeave(){if(hqP){hqP.dispose();hqP=null;}}
 // 360 view: the other points stand exactly where they are in the model and on the minimap (same rectangle), with a constant on-screen size
 // 360 view: small flat gold markers lying on the floor, at the same spots as the model and the minimap
@@ -766,12 +770,14 @@ function show(id){const p=byId[id];press('tour');strip.hidden=false;
   tag.textContent=({sv:'Stanza vendita',A:'Stanza A \u00b7 pergole 41\u201342',B:'Stanza B \u00b7 pergole 39\u201340'})[p.zone]+' \u00b7 punto '+p.lbl;
   desc.textContent=p.t+' Tocca un punto 360° per spostarti.';hint.textContent='Trascina per guardarti intorno \u00b7 rotella o due dita per zoomare';
   const eye=new THREE.Vector3(p.X,1.5,p.Y),prev=cur;
-  const enter=()=>fade(()=>{mode='pano';cur=p;model.visible=false;sph.visible=true;sph.position.copy(eye);hqEnter(p);
-    sphMat.uniforms.pano.value=pano(id);setRot(p);buildArrows(p);closeCard();buildExpo(p);document.getElementById('mini').hidden=false;document.getElementById('mini-z').textContent=({sv:'Stanza vendita',A:'Stanza A',B:'Stanza B'})[p.zone];
+  const hq=HQ_ON&&!!HQ[id];
+  const enter0=()=>fade(()=>{mode='pano';cur=p;model.visible=false;sph.visible=!hq;sph.position.copy(eye);hqEnter(p);
+    if(!hq)sphMat.uniforms.pano.value=pano(id);setRot(p);buildArrows(p);closeCard();buildExpo(p);document.getElementById('mini').hidden=false;document.getElementById('mini-z').textContent=({sv:'Stanza vendita',A:'Stanza A',B:'Stanza B'})[p.zone];
     camera.fov=75;camera.updateProjectionMatrix();
     controls.enabled=false;camera.rotation.order='YXZ';
     const dir=prev?new THREE.Vector3(p.X-prev.X,0,p.Y-prev.Y):new THREE.Vector3(1,0,0);if(dir.lengthSq()<1e-4)dir.set(1,0,0);dir.normalize();
     camera.position.copy(eye);look.yaw=Math.atan2(-dir.x,-dir.z);look.pitch=0;applyLook();controls.target.copy(eye).add(dir.multiplyScalar(.01));anim=null;});
+  const enter=()=>{if(!hq)return enter0();let done=false;const go=()=>{if(!done){done=true;enter0();}};hqPrefetch(id).then(go);setTimeout(go,4000);};
   if(mode==='model'){Object.assign(controls,{minDistance:0,maxPolarAngle:Math.PI});const back=new THREE.Vector3(-1,0,0);
     fly(eye.clone().add(new THREE.Vector3(-1,.15,0)),eye.clone().add(new THREE.Vector3(1,-.1,0)),1000,enter);}
   else enter();
